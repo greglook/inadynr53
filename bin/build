@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# vim: ft=bash
+
+set -e
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+build_native_image() {
+    local uberjar_path="target/dynr53.jar"
+    local native_image_tool="$GRAAL_HOME/bin/native-image"
+
+    if [[ -z $GRAAL_HOME ]]; then
+        echo "GRAAL_HOME not set" >&2
+        exit 1
+    elif [[ ! -x $native_image_tool ]]; then
+        echo "Graal native-image tool not found at $native_image_tool" >&2
+        exit 2
+    fi
+
+    if [[ ! -f $uberjar_path ]]; then
+        echo "Building uberjar..."
+        clojure -T:build uberjar
+    fi
+
+    $native_image_tool \
+        --no-fallback \
+        --allow-incomplete-classpath \
+        --report-unsupported-elements-at-runtime \
+        --initialize-at-build-time \
+        -J-Xms3G -J-Xmx3G \
+        -J-Dclojure.compiler.direct-linking=true \
+        -J-Dclojure.spec.skip-macros=true \
+        --no-server \
+        -jar $uberjar_path
+
+    ls -lh dynr53
+}
+
+if [[ $1 = clean ]]; then
+    rm -rf target
+elif [[ $1 = check ]]; then
+    exec clojure -M:check
+elif [[ $1 = native-image ]]; then
+    build_native_image
+else
+    exec clojure -T:build "$@"
+fi
