@@ -1,0 +1,8 @@
+;; vim: filetype=clojure
+{:files
+ {:ignore #{"target" ".git"}}
+
+ :rules
+ {:indentation
+  {:indents
+   {#"with-.*" [[:block 1]]}}}}
