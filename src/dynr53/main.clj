@@ -6,7 +6,11 @@
     [clojure.tools.cli :as cli]
     [dialog.logger :as log]
     [dynr53.server :as server]
-    [org.httpkit.server :as hks]))
+    [org.httpkit.server :as hks])
+  (:import
+    (sun.misc
+      Signal
+      SignalHandler)))
 
 
 (def ^:private cli-options
@@ -31,6 +35,43 @@
   (println summary))
 
 
+(defn- handle-signals!
+  "Install signal handlers for INT and TERM for clean shutdown."
+  [exit-promise shutdown-promise]
+  (let [handler (reify SignalHandler
+                  (handle
+                    [_ signal]
+                    (log/debug "Received" (.getName ^Signal signal) "signal")
+                    (deliver exit-promise :signal)
+                    (let [value (deref shutdown-promise 1500 :timeout)]
+                      (when (identical? value :timeout)
+                        (log/error "Timed out waiting for server to shut down!")
+                        (System/exit 130)))))]
+    (Signal/handle (Signal. "INT") handler)
+    (Signal/handle (Signal. "TERM") handler)))
+
+
+(defn- run-server
+  "Main system running logic."
+  [options]
+  (let [exit-promise (promise)
+        shutdown-promise (promise)
+        address (:address options)
+        port (:port options)]
+    (handle-signals! exit-promise shutdown-promise)
+    (log/infof "Starting server on %s:%d" address port)
+    (let [server (hks/run-server
+                   server/handler
+                   {:ip address
+                    :port port
+                    :server-header "dynr53"
+                    :legacy-return-value? false})]
+      @exit-promise
+      (log/info "Shutting down server...")
+      @(hks/server-stop! server {:tieout 1000})
+      (deliver shutdown-promise true))))
+
+
 (defn -main
   "Main entry point."
   [& raw-args]
@@ -53,28 +94,12 @@
       (print-usage (parsed :summary))
       (flush)
       (System/exit 0))
-    ;; Launch server.
+    ;; Launch server process.
     (try
-      (let [exit-promise (promise)
-            address (:address options)
-            port (:port options)]
-        ;; TODO: register shutdown hook?
-        (log/infof "Starting server on %s:%d" address port)
-        (let [server (hks/run-server
-                       server/handler
-                       {:ip address
-                        :port port
-                        :server-header "dynr53"
-                        :legacy-return-value? false})]
-          ;; Block until exit delivered.
-          @exit-promise
-          ;; Shutdown server gracefully.
-          (log/info "Shutting down server...")
-          @(hks/server-stop! server {:tieout 1000})))
+      (run-server options)
       (catch Exception ex
         (binding [*out* *err*]
           (cst/print-cause-trace ex)
           (flush)
           (System/exit 4))))
-    ;; Successful run if no other exit.
     (System/exit 0)))
