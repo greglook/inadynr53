@@ -11,26 +11,26 @@ build_native_image() {
 
     if [[ -z $GRAAL_HOME ]]; then
         echo "GRAAL_HOME not set" >&2
+        echo "Download from: https://github.com/graalvm/graalvm-ce-builds/releases" >&2
         exit 1
     elif [[ ! -x $native_image_tool ]]; then
         echo "Graal native-image tool not found at $native_image_tool" >&2
+        echo "If necessary, run: $GRAAL_HOME/bin/gu install native-image" >&2
         exit 2
     fi
 
-    if [[ ! -f $uberjar_path ]]; then
-        echo "Building uberjar..."
-        clojure -T:build uberjar
-    fi
+    clojure -T:build uberjar
 
     $native_image_tool \
+        -H:Name=dynr53 \
+        -H:+ReportExceptionStackTraces \
+        --verbose \
         --no-fallback \
-        --allow-incomplete-classpath \
-        --report-unsupported-elements-at-runtime \
-        --initialize-at-build-time \
+        --native-image-info \
+        --install-exit-handlers \
         -J-Xms3G -J-Xmx3G \
         -J-Dclojure.compiler.direct-linking=true \
         -J-Dclojure.spec.skip-macros=true \
-        --no-server \
         -jar $uberjar_path
 
     ls -lh dynr53

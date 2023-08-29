@@ -4,12 +4,20 @@
   (:require
     [clojure.stacktrace :as cst]
     [clojure.tools.cli :as cli]
-    [dialog.logger :as log]))
+    [dialog.logger :as log]
+    [dynr53.server :as server]
+    [org.httpkit.server :as hks]))
 
 
 (def ^:private cli-options
   "Command-line tool options."
-  [[nil  "--basic-auth USER:PASS" "Enables basic authentication and requires the provider credentials match."]
+  [["-a" "--address IP-ADDR"         "IP address to bind HTTP server to"
+    :default "0.0.0.0"]
+   ["-p" "--port PORT"            "Port to bind HTTP server to"
+    :default 8080
+    :parse-fn parse-long
+    :validate [pos? "Must be a positive number"]]
+   [nil  "--basic-auth USER:PASS" "Enables basic authentication and requires the provider credentials match."]
    [nil  "--route53-zone ZONEID"  "Specify the Route53 zone to make updates in."]
    ["-h" "--help"                 "Show help and usage information."]])
 
@@ -47,11 +55,22 @@
       (System/exit 0))
     ;; Launch server.
     (try
-      (let [shutdown (promise)]
+      (let [exit-promise (promise)
+            address (:address options)
+            port (:port options)]
         ;; TODO: register shutdown hook?
-        (log/info "Starting up...")
-        ;; TODO: launch server
-        @shutdown)
+        (log/infof "Starting server on %s:%d" address port)
+        (let [server (hks/run-server
+                       server/handler
+                       {:ip address
+                        :port port
+                        :server-header "dynr53"
+                        :legacy-return-value? false})]
+          ;; Block until exit delivered.
+          @exit-promise
+          ;; Shutdown server gracefully.
+          (log/info "Shutting down server...")
+          @(hks/server-stop! server {:tieout 1000})))
       (catch Exception ex
         (binding [*out* *err*]
           (cst/print-cause-trace ex)
