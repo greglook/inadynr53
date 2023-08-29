@@ -19,20 +19,26 @@ build_native_image() {
         exit 2
     fi
 
+    local image_args=(
+        '-jar' "$uberjar_path"
+        '-march=x86-64-v2'
+        '-H:Name=dynr53'
+        '-H:+ReportExceptionStackTraces'
+        '-J-Xms3G'
+        '-J-Xmx3G'
+        '-J-Dclojure.compiler.direct-linking=true'
+        '-J-Dclojure.spec.skip-macros=true'
+        '--features=clj_easy.graal_build_time.InitClojureClasses'
+        '--initialize-at-run-time=org.httpkit.client.ClientSslEngineFactory$SSLHolder'
+        #'--native-image-info'
+        #'--verbose'
+        '--no-fallback'
+        '--install-exit-handlers'
+        '--enable-preview'
+    )
+
     clojure -T:build uberjar
-
-    $native_image_tool \
-        -H:Name=dynr53 \
-        -H:+ReportExceptionStackTraces \
-        --verbose \
-        --no-fallback \
-        --native-image-info \
-        --install-exit-handlers \
-        -J-Xms3G -J-Xmx3G \
-        -J-Dclojure.compiler.direct-linking=true \
-        -J-Dclojure.spec.skip-macros=true \
-        -jar $uberjar_path
-
+    $native_image_tool "${image_args[@]}"
     ls -lh dynr53
 }
 
