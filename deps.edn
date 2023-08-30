@@ -2,7 +2,6 @@
 
  :deps
  {org.clojure/clojure {:mvn/version "1.11.1"}
-  org.clojure/tools.cli {:mvn/version "1.0.194"}
   com.github.clj-easy/graal-build-time {:mvn/version "1.0.5"}
   com.amperity/dialog {:mvn/version "2.0.115"}
   http-kit/http-kit {:mvn/version "2.7.0"}}
