@@ -30,13 +30,13 @@
 
 (defn- handle-signals!
   "Install signal handlers for INT and TERM for clean shutdown."
-  [exit-promise shutdown-promise]
+  [shutdown finish]
   (let [handler (reify SignalHandler
                   (handle
                     [_ signal]
                     (log/debug "Received" (.getName ^Signal signal) "signal")
-                    (deliver exit-promise :signal)
-                    (let [value (deref shutdown-promise 5000 :timeout)]
+                    (deliver shutdown :signal)
+                    (let [value (deref finish 5000 :timeout)]
                       (when (identical? value :timeout)
                         (log/error "Timed out waiting for system to shut down!")
                         (System/exit 130)))))]
@@ -47,19 +47,23 @@
 (defn- run-system
   "Main system running logic."
   []
-  (let [exit-promise (promise)
-        shutdown-promise (promise)]
-    (handle-signals! exit-promise shutdown-promise)
-    (let [config (config/load-config)
-          db (db/initialize)
+  (let [config (config/load-config)
+        shutdown (promise)
+        finish (promise)]
+    (when (str/blank? (:zone-id config))
+      (binding [*out* *err*]
+        (println "No Route53 Hosted Zone specified")
+        (System/exit 2)))
+    (handle-signals! shutdown finish)
+    (let [db (db/initialize config)
           server (server/start! config db)
-          worker (worker/start! config db)]
-      @exit-promise
+          worker (worker/start! db)]
+      @shutdown
       (try
         (worker/stop! worker 1000)
         (server/stop! server 1000)
         (finally
-          (deliver shutdown-promise true))))))
+          (deliver finish true))))))
 
 
 (defn -main
