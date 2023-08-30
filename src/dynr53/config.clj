@@ -23,18 +23,30 @@
     :validate pos-int?}
    {:key :basic-auth
     :env "DYNR53_BASIC_AUTH"
-    :desc "Require clients to present these credentials using basic auth"
+    :desc "Require clients to present this 'user:pass' using basic auth"
     :validate (partial re-matches #"[^ :]+:[^ :]+")}
    {:key :zone-id
     :env "DYNR53_ZONE_ID"
     :desc "Route53 Hosted Zone identifier to apply updates to"
-    :validate (complement str/blank?)}
-   ,,,])
+    :validate (complement str/blank?)}])
 
 
 (defn load-config
   "Read configuration values from the environment and defaults, returning a map
   with keyword/value pairs."
   []
-  ;; TODO: read env variables to override defaults
-  defaults)
+  (reduce
+    (fn set-variable
+      [config variable]
+      (if-let [raw (System/getenv (:env variable))]
+        (let [parser (:parse variable identity)
+              valid? (:validate variable any?)
+              value (parser raw)]
+          (when-not (valid? value)
+            (throw (RuntimeException.
+                     (str "Value " (pr-str raw) " is not a valid value for "
+                          (:env variable)))))
+          (assoc config (:key variable) value))
+        config))
+    defaults
+    variables))

@@ -1,6 +1,7 @@
 (ns dynr53.server
   "Server handler implementation."
   (:require
+    [clojure.data.json :as json]
     [clojure.string :as str]
     [dialog.logger :as log]
     [dynr53.db :as db]
@@ -28,32 +29,32 @@
   (fn wrapper
     [req]
     (let [start (System/nanoTime)
-          elapsed (delay (/ (- (System/nanoTime) start) 1e6))
-          remote-addr (:remote-addr req "--")
-          method-str (if-let [method (:request-method req)]
-                       (str/upper-case (name method))
-                       "???")
-          uri-path (str (:uri req)
-                        (when-let [query (:query-string req)]
-                          (str "?" query)))]
-      (try
-        (let [resp (handler req)]
-          (log/infof "[%s] %s %s %s (%.2f ms)"
-                     remote-addr
-                     (or (:status resp) "---")
-                     method-str
-                     uri-path
-                     @elapsed)
-          resp)
-        (catch Exception ex
-          (log/errorf ex
-                      "[%s] %s %s %s (%.2f ms)"
-                      remote-addr
-                      (or (:status (ex-data ex)) "---")
-                      method-str
-                      uri-path
-                      @elapsed)
-          (throw ex))))))
+          resp (handler req)]
+      (log/infof "[%s] %s %s %s (%.2f ms)"
+                 (:remote-addr req "--")
+                 (or (:status resp) "---")
+                 (if-let [method (:request-method req)]
+                   (str/upper-case (name method))
+                   "???")
+                 (str (:uri req)
+                      (when-let [query (:query-string req)]
+                        (str "?" query)))
+                 (/ (- (System/nanoTime) start) 1e6))
+      resp)))
+
+
+(defn- wrap-error-handler
+  "Ring middleware which catches errors and returns a well-formed 500 response."
+  [handler]
+  (fn wrapper
+    [req]
+    (try
+      (handler req)
+      (catch Exception ex
+        (log/error ex "Unhandled request error")
+        {:status 500
+         :headers {"Content-Type" "text/plain"}
+         :body (str "Internal Server Error\n" (ex-message ex))}))))
 
 
 (defn- wrap-method-check
@@ -88,19 +89,17 @@
 
       ;; Check auth
       :else
-      (let [[user pass] (-> (Base64/getDecoder)
-                            (.decode (subs auth-header 6))
-                            (String.)
-                            (str/split #":" 2))]
-        (and (= user (:user expected))
-             (= pass (:pass expected)))))))
+      (-> (Base64/getDecoder)
+          (.decode (subs auth-header 6))
+          (String.)
+          (= expected)))))
 
 
 (defn- wrap-authentication
   "Ring middleware hich checks that the request is authenticated, if expected
   basic credentials are provided. Returns a 401 response if not."
   [handler basic-auth]
-  (if (empty? basic-auth)
+  (if (str/blank? basic-auth)
     handler
     (fn wrapper
       [req]
@@ -142,7 +141,7 @@
   (fn wrapper
     [req]
     (let [params (parse-query (:query-string req))
-          missing (apply disj (set (keys required)) (keys params))]
+          missing (apply disj (set required) (keys params))]
       (if (seq missing)
         {:status 400
          :headers {"Content-Type" "text/plain"}
@@ -160,15 +159,15 @@
     (db/set-target-address! db hostname address)
     {:status 200
      :headers {"Content-Type" "text/plain"}
-     :body "OK"}))
+     :body "OK\n"}))
 
 
 (defn- render-state
   "Handle a request to show the current state of the system."
-  [_db _req]
-  {:status 501
-   :headers {"Content-Type" "text/plain"}
-   :body "NYI"})
+  [db _req]
+  {:status 200
+   :headers {"Content-Type" "application/json"}
+   :body (str (json/write-str @db) "\n")})
 
 
 (defn handler
@@ -184,6 +183,7 @@
        "/dyndns/state"
        (partial render-state db)})
     (wrap-method-check #{:get})
+    (wrap-error-handler)
     (wrap-logging)))
 
 
@@ -191,8 +191,8 @@
   "Start a running server using the configuration and db given. Returns the
   running server."
   [config db]
-  (let [address (:address config)
-        port (:port config)]
+  (let [address (:http-address config)
+        port (:http-port config)]
     (log/infof "Starting server on %s:%d" address port)
     (hks/run-server
       (handler config db)
