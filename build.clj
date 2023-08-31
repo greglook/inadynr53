@@ -4,6 +4,7 @@
     [clojure.tools.build.api :as b]))
 
 
+(def version (str "0.1." (b/git-count-revs nil)))
 (def basis (b/create-basis {:project "deps.edn"}))
 (def class-dir "target/classes")
 (def uber-file "target/dynr53.jar")
@@ -13,6 +14,12 @@
   "Remove compiled artifacts."
   [_]
   (b/delete {:path "target"}))
+
+
+(defn print-version
+  [_]
+  (printf "dynr53 v%s\n" version)
+  (flush))
 
 
 (defn uberjar
