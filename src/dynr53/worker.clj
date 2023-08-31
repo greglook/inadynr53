@@ -41,6 +41,24 @@
     records))
 
 
+(defn- compute-changes
+  "Determine the changes necessary to align the record sets with the targets."
+  [records targets]
+  (into []
+        (keep
+          (fn check-sync
+            [[hostname target]]
+            (let [record-name (str hostname ".")
+                  record-set (find-record record-name "A" records)]
+              (when-not (= [(:address target)] (:records record-set))
+                {:action (if record-set :upsert :create)
+                 :name record-name
+                 :type "A"
+                 :ttl 300
+                 :records [(:address target)]}))))
+        targets))
+
+
 (defn- monitor-change
   "Monitor an in-progress change request."
   [db route53 change]
@@ -64,44 +82,30 @@
         (db/clear-change! db)))))
 
 
+(defn- initialize-zone
+  "Fetch initial data about the configured hosted zone."
+  [db route53]
+  (let [zone-id (get-in @db [:zone :id])]
+    (log/info "Fetching initial information for hosted zone" zone-id)
+    (let [zone (r53/get-hosted-zone route53 zone-id)]
+      (db/set-zone-info! db (:name zone) (:comment zone)))))
+
+
 (defn- monitor-records
   "Monitor the zone records and desired targets."
   [db route53 zone targets]
   (let [zone-id (:id zone)
-        ^Instant updated-at (:updated-at zone)
-        now (db/now)]
-    (cond
-      ;; If this is the first pass, we'll only have a zone id. Look up the rest
-      ;; of the zone info.
-      (= [:id] (keys zone))
-      (let [_ (log/info "Fetching initial information about Hosted Zone" zone-id)
-            resp (r53/get-hosted-zone route53 zone-id)
-            zone-name (:name resp)
-            zone-comment (:comment resp)]
-        (db/set-zone-info! db zone-name zone-comment))
-
-      ;; Check whether we're due for a record set update.
-      (or (nil? updated-at)
-          (.isAfter now (.plus updated-at zone-poll-period)))
+        ^Instant updated-at (:updated-at zone)]
+    (if (or (nil? updated-at)
+            (.isAfter (db/now)
+                      (.plus updated-at zone-poll-period)))
+      ;; Update the knowledge of records in the zone.
       (let [_ (log/infof "Updating record set for zone %s (%s)" (:name zone) zone-id)
             records (r53/list-resource-record-sets route53 zone-id)]
         (db/set-zone-records! db records))
-
       ;; Otherwise, check the current record state against desired targets.
       ;; Apply change if needed.
-      :else
-      (let [changes (into []
-                          (keep (fn check-sync
-                                  [[hostname target]]
-                                  (let [record-name (str hostname ".")
-                                        record-set (find-record record-name "A" (:records zone))]
-                                    (when-not (= [(:address target)] (:records record-set))
-                                      {:action (if record-set :upsert :create)
-                                       :name record-name
-                                       :type "A"
-                                       :ttl 300
-                                       :records [(:address target)]}))))
-                          targets)]
+      (let [changes (compute-changes (:records zone) targets)]
         (if (seq changes)
           (let [_ (log/info "Applying changes to record sets:"
                             (->> changes
@@ -116,6 +120,7 @@
 (defn- worker-loop
   [db route53]
   (let [running (volatile! true)]
+    (initialize-zone db route53)
     (while (and @running (not (Thread/interrupted)))
       (try
         (Thread/sleep (.toMillis worker-sleep))
