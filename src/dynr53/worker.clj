@@ -1,18 +1,11 @@
 (ns dynr53.worker
   "Background worker which drives Route53 interactions."
   (:require
-    [clojure.spec.alpha]
     [clojure.string :as str]
     [clojure.walk :as walk]
-    [cognitect.aws.client.api :as aws]
-    [cognitect.aws.http.cognitect :as http]
-    ;; Explicitly load these so graal understands the relationship, since
-    ;; the aws lib dynamically loads them at runtime.
-    [cognitect.aws.protocols.json]
-    [cognitect.aws.protocols.rest]
-    [cognitect.aws.protocols.rest-xml]
     [dialog.logger :as log]
-    [dynr53.db :as db])
+    [dynr53.db :as db]
+    [dynr53.route53 :as r53])
   (:import
     (java.time
       Duration
@@ -27,20 +20,6 @@
 (def ^Duration zone-poll-period
   "How long to wait between fetches of the hosted zone records."
   (Duration/ofHours 1))
-
-
-(defn- api->record
-  "Coerce the capitalized API shape to the local representation."
-  [record]
-  (-> record
-      (->> (walk/postwalk
-             (fn visit
-               [x]
-               (if (map? x)
-                 (update-keys x (comp keyword str/lower-case name))
-                 x))))
-      (dissoc :resourcerecords)
-      (assoc :records (mapv :Value (:ResourceRecords record)))))
 
 
 (defn- record-match?
@@ -62,24 +41,13 @@
     records))
 
 
-(defn- aws-invoke
-  "Shorthand for calling `aws/invoke`, which also throws exceptions."
-  [client op request]
-  (let [resp (aws/invoke client {:op op, :request request})]
-    (when (:cognitect.anomalies/category resp)
-      (throw (ex-info (:cognitect.anomalies/message resp "API error")
-                      (dissoc resp :cognitect.aws.util/throwable)
-                      (:cognitect.aws.util/throwable resp))))
-    resp))
-
-
 (defn- monitor-change
   "Monitor an in-progress change request."
   [db route53 change]
   (let [change-id (:id change)
         _ (log/debug "Checking status of change" change-id)
-        resp (aws-invoke route53 :GetChange {:Id change-id})
-        status (get-in resp [:ChangeInfo :Status])]
+        resp (r53/get-change route53 change-id)
+        status (:status resp)]
     (case status
       "PENDING"
       (do
@@ -107,18 +75,16 @@
       ;; of the zone info.
       (= [:id] (keys zone))
       (let [_ (log/info "Fetching initial information about Hosted Zone" zone-id)
-            resp (aws-invoke route53 :GetHostedZone {:Id zone-id})
-            zone-name (get-in resp [:HostedZone :Name])
-            zone-desc (get-in resp [:HostedZone :Config :Comment])]
+            resp (r53/get-hosted-zone route53 zone-id)
+            zone-name (:name resp)
+            zone-desc (get-in resp [:config :comment])]
         (db/set-zone-info! db zone-name zone-desc))
 
       ;; Check whether we're due for a record set update.
       (or (nil? updated-at)
           (.isAfter now (.plus updated-at zone-poll-period)))
       (let [_ (log/infof "Updating record set for zone %s (%s)" (:name zone) zone-id)
-            ;; TODO: handle pagination
-            resp (aws-invoke route53 :ListResourceRecordSets {:HostedZoneId zone-id})
-            records (mapv api->record (:ResourceRecordSets resp))]
+            records (r53/list-resource-record-sets route53 zone-id)]
         (db/set-zone-records! db records))
 
       ;; Otherwise, check the current record state against desired targets.
@@ -130,37 +96,26 @@
                                   (let [record-name (str hostname ".")
                                         record-set (find-record record-name "A" (:records zone))]
                                     (when-not (= [(:address target)] (:records record-set))
-                                      {:Action (if record-set "UPSERT" "CREATE")
-                                       :ResourceRecordSet {:Name record-name
-                                                           :Type "A"
-                                                           :TTL 300
-                                                           :ResourceRecords [{:Value (:address target)}]}}))))
+                                      {:action (if record-set :upsert :create)
+                                       :name record-name
+                                       :type "A"
+                                       :ttl 300
+                                       :records [(:address target)]}))))
                           targets)]
         (if (seq changes)
           (let [_ (log/info "Applying changes to record sets:"
                             (->> changes
-                                 (map #(str (:Action %) " " (get-in % [:ResourceRecordSet :Name])))
+                                 (map #(str (:action %) " " (:name %)))
                                  (str/join ", ")))
-                resp (aws-invoke route53 :ChangeResourceRecordSets
-                                 {:HostedZoneId zone-id
-                                  :ChangeBatch {:Changes changes
-                                                :Comment "dynr53 worker sync"}})
-                change-id (get-in resp [:ChangeInfo :Id])]
-            (db/set-change! db
-                            (if (str/starts-with? change-id "/change/")
-                              (subs change-id 8)
-                              change-id)
-                            (get-in resp [:ChangeInfo :Status])
-                            (mapv (comp api->record :ResourceRecordSet)
-                                  changes)))
+                resp (r53/change-resource-record-sets! route53 zone-id changes)]
+            (db/set-change! db (:id resp) (:status resp) changes))
           ;; In sync
           (log/debug "Zone records and targets are in sync"))))))
 
 
 (defn- worker-loop
   [db]
-  (let [route53 (aws/client {:api :route53
-                             :http-client (http/create)})
+  (let [route53 (r53/new-client)
         running (volatile! true)]
     (while (and @running (not (Thread/interrupted)))
       (try

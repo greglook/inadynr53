@@ -87,7 +87,8 @@
          (fn [s]
            (let [change (:change s)
                  changed-records (into {}
-                                       (map (juxt (juxt :name :type) identity))
+                                       (map (juxt (juxt :name :type)
+                                                  #(dissoc % :action)))
                                        (:changes change))
                  records (into []
                                (map
