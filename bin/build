@@ -19,29 +19,49 @@ build_native_image() {
         exit 2
     fi
 
+    if [[ ! -f $uberjar_path ]]; then
+        echo "Building uberjar..."
+        clojure -T:build uberjar
+        ls -lh $uberjar_path
+        echo
+    fi
+
+    if [[ ! -d target/config ]]; then
+        echo "Inferring native-image config..."
+        $GRAAL_HOME/bin/java \
+            -agentlib:native-image-agent=config-output-dir=./target/config/ \
+            -jar $uberjar_path \
+            --help > /dev/null
+        echo
+    fi
+
     local image_args=(
         '-jar' "$uberjar_path"
         '-march=x86-64-v2'
-        '-H:Name=dynr53'
+        '-H:Name=target/dynr53'
+        #'-H:ConfigurationFileDirectories=target/config/'
+        '-H:IncludeResources=cognitect/aws/.*\.edn$'
+        '-H:IncludeResources=cognitect_aws_http\.edn$'
+        '-H:IncludeResources=com/cognitect/http-client/manifest\.edn'
         '-H:+ReportExceptionStackTraces'
-        '-J-Xms3G'
-        '-J-Xmx3G'
-        '-J-Dclojure.compiler.direct-linking=true'
-        '-J-Dclojure.spec.skip-macros=true'
+        #'--enable-http'
+        #'--enable-https'
+        #'--enable-all-security-services'
         '--features=clj_easy.graal_build_time.InitClojureClasses'
         '--initialize-at-run-time=org.httpkit.client.ClientSslEngineFactory$SSLHolder'
+        '-R:MinHeapSize=5m'
+        '-R:MaxHeapSize=128m'
+        '-R:MaxNewSize=2m'
+        '-J-Xms3G'
+        '-J-Xmx3G'
+        '--no-fallback'
+        '--enable-preview'
         #'--native-image-info'
         #'--verbose'
-        '--no-fallback'
-        '--install-exit-handlers'
-        '--enable-preview'
+        #'--trace-class-initialization=org.slf4j.LoggerFactory'
     )
 
-    echo "Building uberjar..."
-    clojure -T:build uberjar
-    ls -lh $uberjar_path
-    echo
-
+    echo "Generating native-image"
     $native_image_tool "${image_args[@]}"
     ls -lh dynr53
 }

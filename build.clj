@@ -24,7 +24,11 @@
   (b/compile-clj
     {:basis basis
      :src-dirs ["src"]
-     :class-dir class-dir})
+     :class-dir class-dir
+     :java-opts ["-Dclojure.spec.skip-macros=true"]
+     :compile-opts {:elide-meta [:doc :file :line :added]
+                    :direct-linking true}
+     :bindings {#'clojure.core/*assert* false}})
   (b/uber
     {:basis basis
      :class-dir class-dir

@@ -16,8 +16,6 @@
  {:build
   {:deps {org.clojure/clojure {:mvn/version "1.11.1"}
           org.clojure/tools.build {:mvn/version "0.8.4"}}
-   :jvm-opts ["-Dclojure.compiler.direct-linking=true"
-              "-Dclojure.spec.skip-macros=true"]
    :ns-default build}
 
   :dev

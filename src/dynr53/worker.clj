@@ -1,9 +1,16 @@
 (ns dynr53.worker
   "Background worker which drives Route53 interactions."
   (:require
+    [clojure.spec.alpha]
     [clojure.string :as str]
     [clojure.walk :as walk]
     [cognitect.aws.client.api :as aws]
+    [cognitect.aws.http.cognitect :as http]
+    ;; Explicitly load these so graal understands the relationship, since
+    ;; the aws lib dynamically loads them at runtime.
+    [cognitect.aws.protocols.json]
+    [cognitect.aws.protocols.rest]
+    [cognitect.aws.protocols.rest-xml]
     [dialog.logger :as log]
     [dynr53.db :as db])
   (:import
@@ -152,7 +159,8 @@
 
 (defn- worker-loop
   [db]
-  (let [route53 (aws/client {:api :route53})
+  (let [route53 (aws/client {:api :route53
+                             :http-client (http/create)})
         running (volatile! true)]
     (while (and @running (not (Thread/interrupted)))
       (try
