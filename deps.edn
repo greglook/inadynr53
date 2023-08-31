@@ -4,8 +4,8 @@
  {org.clojure/clojure {:mvn/version "1.11.1"}
   com.github.clj-easy/graal-build-time {:mvn/version "1.0.5"}
 
-  software.amazon.awssdk/url-connection-client {:mvn/version "2.16.1"}
-  software.amazon.awssdk/route53 {:mvn/version "2.16.1"
+  software.amazon.awssdk/url-connection-client {:mvn/version "2.20.138"}
+  software.amazon.awssdk/route53 {:mvn/version "2.20.138"
                                   :exclusions [software.amazon.awssdk/netty-nio-client
                                                software.amazon.awssdk/apache-client]}
 

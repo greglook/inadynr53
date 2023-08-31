@@ -34,40 +34,24 @@ build_native_image() {
         echo
     fi
 
-    if [[ ! -d target/config || $uberjar_path -nt target/config ]]; then
-        echo "Inferring native-image config..."
-        rm -rf target/config
-        $GRAAL_HOME/bin/java \
-            -agentlib:native-image-agent=config-output-dir=./target/config/ \
-            -jar $uberjar_path \
-            --help > /dev/null
-        echo
-    fi
-
     local image_args=(
         '-jar' "$uberjar_path"
         '-march=x86-64-v2'
         '-H:Name=target/dynr53'
-        #'-H:ConfigurationFileDirectories=target/config/'
-        '-H:IncludeResources=cognitect/aws/.*\.edn$'
-        '-H:IncludeResources=cognitect_aws_http\.edn$'
-        '-H:IncludeResources=com/cognitect/http-client/manifest\.edn'
+        '-H:+ReportUnsupportedElementsAtRuntime'
         '-H:+ReportExceptionStackTraces'
-        #'--enable-http'
-        #'--enable-https'
-        #'--enable-all-security-services'
-        '--features=clj_easy.graal_build_time.InitClojureClasses'
-        '--initialize-at-run-time=org.httpkit.client.ClientSslEngineFactory$SSLHolder'
+
         '-R:MinHeapSize=5m'
         '-R:MaxHeapSize=128m'
         '-R:MaxNewSize=2m'
         '-J-Xms3G'
         '-J-Xmx3G'
-        '--no-fallback'
+
+        '--features=clj_easy.graal_build_time.InitClojureClasses'
         '--enable-preview'
+        '--no-fallback'
         #'--native-image-info'
         #'--verbose'
-        #'--trace-class-initialization=org.slf4j.LoggerFactory'
     )
 
     echo "Generating native-image"
