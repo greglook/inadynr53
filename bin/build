@@ -37,7 +37,11 @@ build_native_image() {
         '--enable-preview'
     )
 
+    echo "Building uberjar..."
     clojure -T:build uberjar
+    ls -lh $uberjar_path
+    echo
+
     $native_image_tool "${image_args[@]}"
     ls -lh dynr53
 }
