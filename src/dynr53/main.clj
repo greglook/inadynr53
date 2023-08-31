@@ -3,6 +3,7 @@
   (:gen-class)
   (:require
     [clojure.stacktrace :as cst]
+    [clojure.string :as str]
     [dialog.logger :as log]
     [dynr53.config :as config]
     [dynr53.db :as db]
