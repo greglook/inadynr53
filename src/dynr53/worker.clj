@@ -12,19 +12,14 @@
       Instant)))
 
 
-(def worker-sleep
-  "How long should the worker thread sleep between ticks, in milliseconds."
-  10000)
+(def ^Duration worker-sleep
+  "How long should the worker thread sleep between ticks."
+  (Duration/ofSeconds 10))
 
 
 (def ^Duration zone-poll-period
   "How long to wait between fetches of the hosted zone records."
   (Duration/ofHours 1))
-
-
-(def ^Duration change-poll-period
-  "How long to wait between checks on the status of a pending change."
-  (Duration/ofMinutes 1))
 
 
 (defn- api->record
@@ -75,7 +70,6 @@
   "Monitor an in-progress change request."
   [db route53 change]
   (let [change-id (:id change)
-        now (db/now)
         _ (log/debug "Checking status of change" change-id)
         resp (aws-invoke route53 :GetChange {:Id change-id})
         status (get-in resp [:ChangeInfo :Status])]
@@ -162,7 +156,7 @@
         running (volatile! true)]
     (while (and @running (not (Thread/interrupted)))
       (try
-        (Thread/sleep worker-sleep)
+        (Thread/sleep (.toMillis worker-sleep))
         (let [state @db]
           (if-let [change (:change state)]
             (monitor-change db route53 change)
