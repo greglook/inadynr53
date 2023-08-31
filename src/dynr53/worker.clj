@@ -77,8 +77,8 @@
       (let [_ (log/info "Fetching initial information about Hosted Zone" zone-id)
             resp (r53/get-hosted-zone route53 zone-id)
             zone-name (:name resp)
-            zone-desc (get-in resp [:config :comment])]
-        (db/set-zone-info! db zone-name zone-desc))
+            zone-comment (:comment resp)]
+        (db/set-zone-info! db zone-name zone-comment))
 
       ;; Check whether we're due for a record set update.
       (or (nil? updated-at)
@@ -114,9 +114,8 @@
 
 
 (defn- worker-loop
-  [db]
-  (let [route53 (r53/new-client)
-        running (volatile! true)]
+  [db route53]
+  (let [running (volatile! true)]
     (while (and @running (not (Thread/interrupted)))
       (try
         (Thread/sleep (.toMillis worker-sleep))
@@ -134,9 +133,10 @@
   "Starts a worker thread."
   [db]
   (log/info "Starting worker thread")
-  (doto (Thread. ^Runnable #(worker-loop db) "dynr53-worker")
-    (.setDaemon true)
-    (.start)))
+  (let [route53 (r53/new-client)]
+    (doto (Thread. ^Runnable #(worker-loop db route53) "dynr53-worker")
+      (.setDaemon true)
+      (.start))))
 
 
 (defn stop!

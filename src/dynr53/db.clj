@@ -43,12 +43,12 @@
 
 
 (defn set-zone-info!
-  [db zone-name zone-desc]
+  [db zone-name zone-comment]
   (-> db
       (swap! update :zone
              assoc
              :name zone-name
-             :desc zone-desc)
+             :comment zone-comment)
       (:zone)))
 
 

@@ -10,6 +10,7 @@
     [dynr53.server :as server]
     [dynr53.worker :as worker])
   (:import
+    java.security.Security
     (sun.misc
       Signal
       SignalHandler)))
@@ -27,6 +28,13 @@
             (or (get config/defaults (:key option)) "")
             (:desc option)))
   (flush))
+
+
+(defn- configure-runtime!
+  "Configure runtime JVM settings."
+  []
+  ;; AWS SDK best practice
+  (Security/setProperty "networkaddress.cache.ttl" "60"))
 
 
 (defn- handle-signals!
@@ -55,6 +63,7 @@
       (binding [*out* *err*]
         (println "No Route53 Hosted Zone specified")
         (System/exit 2)))
+    (configure-runtime!)
     (handle-signals! shutdown finish)
     (let [db (db/initialize config)
           server (server/start! config db)

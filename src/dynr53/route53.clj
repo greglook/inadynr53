@@ -3,109 +3,150 @@
   (:require
     [clojure.string :as str]
     [clojure.walk :as walk]
-    [cognitect.aws.client.api :as aws]
-    [cognitect.aws.http.cognitect :as http]
-    ;; Explicitly load these so graal understands the relationship, since
-    ;; the aws lib dynamically loads them at runtime.
-    [cognitect.aws.protocols.json]
-    [cognitect.aws.protocols.rest]
-    [cognitect.aws.protocols.rest-xml]
-    [dialog.logger :as log]))
+    [dialog.logger :as log])
+  (:import
+    java.util.Collection
+    (software.amazon.awssdk.http.urlconnection
+      UrlConnectionHttpClient)
+    (software.amazon.awssdk.regions
+      Region)
+    (software.amazon.awssdk.services.route53
+      Route53Client
+      Route53ClientBuilder)
+    (software.amazon.awssdk.services.route53.model
+      Change
+      ChangeBatch
+      ChangeInfo
+      ChangeResourceRecordSetsRequest
+      GetChangeRequest
+      GetHostedZoneRequest
+      HostedZone
+      ListResourceRecordSetsRequest
+      ResourceRecord
+      ResourceRecordSet)))
 
 
-(defn- downcase-keys
-  "Convert all map keyword keys into lower-case variants."
-  [m]
-  (walk/postwalk
-    (fn visit
-      [x]
-      (if (map? x)
-        (update-keys x (comp keyword str/lower-case name))
-        x))
-    m))
-
-
-(defn- api->record
-  "Coerce the capitalized API shape to the local representation."
-  [record]
-  (-> record
-      (downcase-keys)
-      (dissoc :resourcerecords)
-      (assoc :records (mapv :Value (:ResourceRecords record)))))
-
-
-(defn- record->api
-  "Coerce the local representation of a record set into the capitalized API shape."
-  [record]
-  {:Name (:name record)
-   :Type (:type record)
-   :TTL (:ttl record)
-   :ResourceRecords (mapv #(array-map :Value %) (:records record))})
-
-
-(defn- change->api
-  "Coerce the local representation of a record set change into the capitalized
-  API shape."
-  [change]
-  (let [action (str/upper-case (name (:action change)))
-        record (record->api change)]
-    {:Action action
-     :ResourceRecordSet record}))
-
-
-(defn- aws-invoke
-  "Shorthand for calling `aws/invoke`, which also throws exceptions."
-  [client op request]
-  (let [resp (aws/invoke client {:op op, :request request})]
-    (when (:cognitect.anomalies/category resp)
-      (throw (ex-info (:cognitect.anomalies/message resp "API error")
-                      (dissoc resp :cognitect.aws.util/throwable)
-                      (:cognitect.aws.util/throwable resp))))
-    resp))
-
+;; ## Client Construction
 
 (defn new-client
   "Construct a new Route53 client."
   []
-  (aws/client {:api :route53, :http-client (http/create)}))
+  (as-> (Route53Client/builder)
+    builder
+    ^Route53ClientBuilder
+    (.httpClientBuilder builder (UrlConnectionHttpClient/builder))
+    ^Route53ClientBuilder
+    (.region builder Region/AWS_GLOBAL)
+    ^Route53ClientBuilder
+    (.build builder)))
 
+
+;; ## Coercion Functions
+
+(defn- HostedZone->map
+  [^HostedZone zone]
+  {:id (.id zone)
+   :name (.name zone)
+   :comment (some-> (.config zone) (.comment))})
+
+
+(defn- val->ResourceRecord
+  ^ResourceRecord
+  [value]
+  (.. (ResourceRecord/builder)
+      (value value)
+      (build)))
+
+
+(defn- ResourceRecord->val
+  [^ResourceRecord record]
+  (.value record))
+
+
+(defn- map->ResourceRecordSet
+  ^ResourceRecordSet
+  [rrset]
+  (.. (ResourceRecordSet/builder)
+      (name (:name rrset))
+      (type ^String (:type rrset))
+      (ttl (:ttl rrset))
+      (resourceRecords ^Collection (mapv val->ResourceRecord (:records rrset)))
+      (build)))
+
+
+(defn- ResourceRecordSet->map
+  [^ResourceRecordSet rrset]
+  {:name (.name rrset)
+   :type (.typeAsString rrset)
+   :ttl (.ttl rrset)
+   :records (mapv ResourceRecord->val (.resourceRecords rrset))})
+
+
+(defn- map->Change
+  ^Change
+  [change]
+  (let [action (case (:action change)
+                 :create "CREATE"
+                 :upsert "UPSERT")]
+    (.. (Change/builder)
+        (action ^String action)
+        (resourceRecordSet (map->ResourceRecordSet change))
+        (build))))
+
+
+(defn- ChangeInfo->map
+  [^ChangeInfo info]
+  {:id (.id info)
+   :comment (.comment info)
+   :status (.statusAsString info)
+   :submitted-at (.submittedAt info)})
+
+
+;; ## API Methods
 
 (defn get-hosted-zone
   "Fetch information about the identified hosted zone."
-  [client zone-id]
-  (-> (aws-invoke client :GetHostedZone {:Id zone-id})
-      (:HostedZone)
-      (downcase-keys)))
+  [^Route53Client client ^String zone-id]
+  (let [req (.. (GetHostedZoneRequest/builder)
+                (id zone-id)
+                (build))
+        resp (.getHostedZone client ^GetHostedZoneRequest req)
+        zone (.hostedZone resp)]
+    (HostedZone->map zone)))
 
 
 (defn list-resource-record-sets
   "List the resource record sets in a hosted zone."
-  [client zone-id]
-  ;; TODO: handle pagination
-  (let [resp (aws-invoke client :ListResourceRecordSets {:HostedZoneId zone-id})]
-    (mapv api->record (:ResourceRecordSets resp))))
+  [^Route53Client client ^String zone-id]
+  (let [req (.. (ListResourceRecordSetsRequest/builder)
+                (hostedZoneId zone-id)
+                (build))
+        resp (.listResourceRecordSetsPaginator client ^ListResourceRecordSetsRequest req)]
+    (mapv ResourceRecordSet->map (.resourceRecordSets resp))))
 
 
 (defn change-resource-record-sets!
   "Apply changes to the resource record sets in a zone."
-  [client zone-id changes]
-  (let [changes (mapv change->api changes)
-        resp (aws-invoke client :ChangeResourceRecordSets
-                         {:HostedZoneId zone-id
-                          :ChangeBatch {:Changes changes
-                                        :Comment "dynr53 worker sync"}})
-        change-id (get-in resp [:ChangeInfo :Id])
-        change-id (if (str/starts-with? change-id "/change/")
-                    (subs change-id 8)
-                    change-id)]
-    (-> (:ChangeInfo resp)
-        (downcase-keys)
-        (assoc :id change-id))))
+  [^Route53Client client ^String zone-id changes]
+  (let [batch (.. (ChangeBatch/builder)
+                  (comment "dynr53 sync")
+                  (changes ^Collection (mapv map->Change changes))
+                  (build))
+        req (.. (ChangeResourceRecordSetsRequest/builder)
+                (hostedZoneId zone-id)
+                (changeBatch ^ChangeBatch batch)
+                (build))
+        resp (.changeResourceRecordSets client ^ChangeResourceRecordSetsRequest req)
+        info (.changeInfo resp)]
+    (ChangeInfo->map info)))
 
 
 (defn get-change
   "Fetch the latest information about the identified change."
-  [client change-id]
-  (-> (aws-invoke client :GetChange {:Id change-id})
-      (:ChangeInfo)
-      (downcase-keys)))
+  [^Route53Client client ^String change-id]
+  (let [req (.. (GetChangeRequest/builder)
+                (id change-id)
+                (build))
+        resp (.getChange client ^GetChangeRequest req)
+        info (.changeInfo resp)]
+    (ChangeInfo->map info)))
