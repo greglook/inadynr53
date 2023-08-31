@@ -5,6 +5,14 @@ set -e
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+find-latest() {
+    local file latest
+    for file in $(find "$1" -type f -name "*.$2"); do
+        [[ -z $latest || $file -nt $latest ]] && latest=$file
+    done
+    echo $latest
+}
+
 build_native_image() {
     local uberjar_path="target/dynr53.jar"
     local native_image_tool="$GRAAL_HOME/bin/native-image"
@@ -19,15 +27,16 @@ build_native_image() {
         exit 2
     fi
 
-    if [[ ! -f $uberjar_path ]]; then
+    if [[ ! -f $uberjar_path || deps.edn -nt $uberjar_path || $(find-latest src clj) -nt $uberjar_path ]]; then
         echo "Building uberjar..."
         clojure -T:build uberjar
         ls -lh $uberjar_path
         echo
     fi
 
-    if [[ ! -d target/config ]]; then
+    if [[ ! -d target/config || $uberjar_path -nt target/config ]]; then
         echo "Inferring native-image config..."
+        rm -rf target/config
         $GRAAL_HOME/bin/java \
             -agentlib:native-image-agent=config-output-dir=./target/config/ \
             -jar $uberjar_path \
@@ -63,7 +72,7 @@ build_native_image() {
 
     echo "Generating native-image"
     $native_image_tool "${image_args[@]}"
-    ls -lh dynr53
+    ls -lh target/dynr53
 }
 
 if [[ $1 = clean ]]; then
