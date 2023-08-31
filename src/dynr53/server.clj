@@ -155,11 +155,29 @@
   [db req]
   (let [params (:parameters req)
         hostname (get params "hostname")
-        address (get params "address")]
-    (db/set-target-address! db hostname address)
-    {:status 200
-     :headers {"Content-Type" "text/plain"}
-     :body "OK\n"}))
+        address (get params "address")
+        zone-name (get-in @db [:zone :name])]
+    (cond
+      ;; Wait for data to become available.
+      (nil? zone-name)
+      {:status 503
+       :headers {"Content-Type" "text/plain"}
+       :body "Waiting for hosted zone information\n"}
+
+      ;; Check that hostname matches zone.
+      (not (str/ends-with? (str hostname ".") (str "." zone-name)))
+      {:status 409
+       :headers {"Content-Type" "text/plain"}
+       :body (str "Requested hostname " hostname
+                  " does not belong to hosted zone " zone-name "\n")}
+
+      ;; Otherwise set target.
+      :else
+      (do
+        (db/set-target-address! db hostname address)
+        {:status 200
+         :headers {"Content-Type" "text/plain"}
+         :body "OK\n"}))))
 
 
 (defn- render-state
