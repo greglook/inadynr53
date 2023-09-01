@@ -12,22 +12,26 @@
 
 (def variables
   "Configuration variable mappings."
-  [{:key :http-address
+  [{:key :zone-id
+    :env "DYNR53_ZONE_ID"
+    :desc "Route53 Hosted Zone identifier to apply updates to."
+    :validate (complement str/blank?)}
+   {:key :basic-auth
+    :env "DYNR53_BASIC_AUTH"
+    :desc "Require clients to present this 'user:pass' using basic auth."
+    :validate (partial re-matches #"[^ :]+:[^ :]+")}
+   {:key :http-address
     :env "DYNR53_HTTP_ADDRESS"
-    :desc "IP address to bind the HTTP server to"
+    :desc "IP address to bind the HTTP server to."
     :validate (complement str/blank?)}
    {:key :http-port
     :env "DYNR53_HTTP_PORT"
-    :desc "TCP port to bind the HTTP server to"
+    :desc "TCP port to bind the HTTP server to."
     :parse parse-long
     :validate pos-int?}
-   {:key :basic-auth
-    :env "DYNR53_BASIC_AUTH"
-    :desc "Require clients to present this 'user:pass' using basic auth"
-    :validate (partial re-matches #"[^ :]+:[^ :]+")}
-   {:key :zone-id
-    :env "DYNR53_ZONE_ID"
-    :desc "Route53 Hosted Zone identifier to apply updates to"
+   {:key :state-dir
+    :env "DYNR53_STATE_DIR"
+    :desc "Directory for persisting state between runs."
     :validate (complement str/blank?)}])
 
 

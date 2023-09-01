@@ -57,14 +57,15 @@ is accessible beyond the local host.
 
 | Environment           | Description |
 |-----------------------|-------------|
+| `DYNR53_ZONE_ID`      | Route53 Hosted Zone identifier to apply updates to.
+| `DYNR53_BASIC_AUTH`   | Require clients to present this 'user:pass' using basic auth.
 | `DYNR53_HTTP_ADDRESS` | IP address to bind the HTTP server to.
 | `DYNR53_HTTP_PORT`    | TCP port to bind the HTTP server to.
-| `DYNR53_BASIC_AUTH`   | Require clients to present this 'user:pass' using basic auth.
-| `DYNR53_ZONE_ID`      | Route53 Hosted Zone identifier to apply updates to.
+| `DYNR53_STATE_DIR`    | Directory for persisting state between runs.
 
-The AWS credentials are resolved using the [default provider order](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/credentials-chain.html#credentials-default)
-which means you can put them in the standard environment or filesystem
-locations.
+The AWS credentials are resolved using the
+[default provider chain](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/credentials-chain.html#credentials-default),
+so you can put them in any of the standard environment or filesystem locations.
 
 
 ## License
