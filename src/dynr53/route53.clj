@@ -1,9 +1,5 @@
 (ns dynr53.route53
   "API wrapper code for interacting with Route53."
-  (:require
-    [clojure.string :as str]
-    [clojure.walk :as walk]
-    [dialog.logger :as log])
   (:import
     java.util.Collection
     (software.amazon.awssdk.http.urlconnection

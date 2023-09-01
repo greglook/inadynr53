@@ -2,7 +2,6 @@
   "Background worker which drives Route53 interactions."
   (:require
     [clojure.string :as str]
-    [clojure.walk :as walk]
     [dialog.logger :as log]
     [dynr53.db :as db]
     [dynr53.route53 :as r53])

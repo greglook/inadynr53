@@ -3,6 +3,7 @@ In a Diner 53
 
 A minimal, self-hostable server for [inadyn](https://github.com/troglobit/inadyn)
 clients, which updates a hosted zone in [Amazon Route53](https://aws.amazon.com/route53/).
+Originally inspired by [this blog post](https://dixonwille.medium.com/custom-dynamic-dns-with-unifi-dream-machine-pro-b664f7c964).
 
 
 ## What Is This
