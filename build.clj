@@ -32,7 +32,7 @@
   "Print the current version information."
   [_]
   (let [{:keys [version commit date]} (version-info)]
-    (printf "dynr53 %s (built %s from %s)\n" version date commit)
+    (printf "dynr53 %s (built from %s on %s)\n" version commit date)
     (flush)))
 
 

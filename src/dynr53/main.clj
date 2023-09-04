@@ -49,7 +49,7 @@
     (let [version (.getProperty manifest "Implementation-Version" "dev")
           commit (.getProperty manifest "Build-Commit" "HEAD")
           date (.getProperty manifest "Build-Date" "live")]
-      (printf "dynr53 %s (built %s from %s)\n" version date commit))))
+      (printf "dynr53 %s (built from %s on %s)\n" version commit date))))
 
 
 (defn- configure-runtime!
