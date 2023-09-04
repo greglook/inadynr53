@@ -38,6 +38,7 @@ build_native_image() {
         '-jar' "$uberjar_path"
         '-march=x86-64-v2'
         '-H:Name=target/dynr53'
+        '-H:IncludeResources=^META-INF/MANIFEST.MF$'
         '-H:+ReportUnsupportedElementsAtRuntime'
         '-H:+ReportExceptionStackTraces'
 
