@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+...
+
+
+## [0.2.32] - 2023-09-04
+
 - Added an option to configure a state directory, where targets will be
   persisted between runs.
 - Embedded version and build information for use at runtime.
@@ -20,5 +25,6 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 Initial release.
 
 
-[Unreleased]: https://github.com/greglook/inadynr53/compare/0.1.22...HEAD
+[Unreleased]: https://github.com/greglook/inadynr53/compare/0.2.32...HEAD
+[0.2.32]: https://github.com/greglook/inadynr53/compare/0.1.22...0.2.32
 [0.1.22]: https://github.com/greglook/inadynr53/tag/0.1.22
