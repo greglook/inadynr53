@@ -2,6 +2,7 @@
   "Main entry for Dynr53."
   (:gen-class)
   (:require
+    [clojure.java.io :as io]
     [clojure.stacktrace :as cst]
     [clojure.string :as str]
     [dialog.logger :as log]
@@ -11,6 +12,7 @@
     [dynr53.worker :as worker])
   (:import
     java.security.Security
+    java.util.Properties
     (sun.misc
       Signal
       SignalHandler)))
@@ -19,7 +21,12 @@
 (defn- print-usage
   "Print usage help for the tool."
   []
-  (println "Usage: dynr53 [--help]")
+  (println "Usage: dynr53 [command]")
+  (newline)
+  (println "Commands:")
+  (println "    server      Serve the dyndns API (default)")
+  (println "    version     Show version information")
+  (println "    help        Show usage help")
   (newline)
   (println "Configuration:")
   (doseq [option config/variables]
@@ -28,6 +35,21 @@
             (or (get config/defaults (:key option)) "")
             (:desc option)))
   (flush))
+
+
+(defn- print-version
+  "Print the version information."
+  []
+  (let [manifest (Properties.)]
+    (try
+      (with-open [rdr (io/reader (io/resource "META-INF/MANIFEST.MF"))]
+        (.load manifest rdr))
+      (catch Exception _
+        _))
+    (let [version (.getProperty manifest "Implementation-Version" "dev")
+          commit (.getProperty manifest "Build-Commit" "HEAD")
+          date (.getProperty manifest "Build-Date" "live")]
+      (printf "dynr53 %s (built %s from %s)\n" version date commit))))
 
 
 (defn- configure-runtime!
@@ -79,22 +101,26 @@
 (defn -main
   "Main entry point."
   [& args]
-  ;; Check for help option.
-  (when (contains? #{"-h" "--help" "help"} (first args))
-    (print-usage)
-    (System/exit 0))
-  ;; Reject any other arguments.
-  (when (seq args)
-    (binding [*out* *err*]
-      (println "dynr53 does not accept any arguments")
-      (System/exit 1)))
-  ;; Run system otherwise
-  (try
-    (run-system)
-    (catch Exception ex
+  (let [[command & more] args]
+    (case command
+      (nil "server")
+      (try
+        (run-system)
+        (catch Exception ex
+          (binding [*out* *err*]
+            (cst/print-cause-trace ex)
+            (flush)
+            (System/exit 4))))
+
+      ("help" "--help" "-h")
+      (print-usage)
+
+      "version"
+      (print-version)
+
+      ;; else
       (binding [*out* *err*]
-        (cst/print-cause-trace ex)
-        (flush)
-        (System/exit 4))))
+        (println "Unknown dynr53 command:" command)
+        (System/exit 1))))
   (flush)
   (System/exit 0))
