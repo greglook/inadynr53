@@ -5,67 +5,32 @@ set -e
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-find-latest() {
-    local file latest
-    for file in $(find "$1" -type f -name "*.$2"); do
-        [[ -z $latest || $file -nt $latest ]] && latest=$file
-    done
-    echo $latest
-}
-
-build_native_image() {
-    local uberjar_path="target/dynr53.jar"
-    local native_image_tool="$GRAAL_HOME/bin/native-image"
-
-    if [[ -z $GRAAL_HOME ]]; then
-        echo "GRAAL_HOME not set" >&2
-        echo "Download from: https://github.com/graalvm/graalvm-ce-builds/releases" >&2
-        exit 1
-    elif [[ ! -x $native_image_tool ]]; then
-        echo "Graal native-image tool not found at $native_image_tool" >&2
-        echo "If necessary, run: $GRAAL_HOME/bin/gu install native-image" >&2
-        exit 2
-    fi
-
-    if [[ ! -f $uberjar_path || deps.edn -nt $uberjar_path || $(find-latest src clj) -nt $uberjar_path ]]; then
-        echo "Building uberjar..."
-        clojure -T:build uberjar
-        ls -lh $uberjar_path
-        echo
-    fi
-
-    local image_args=(
-        '-jar' "$uberjar_path"
-        '-march=x86-64-v2'
-        '-H:Name=target/dynr53'
-        '-H:IncludeResources=^META-INF/MANIFEST.MF$'
-        '-H:+ReportUnsupportedElementsAtRuntime'
-        '-H:+ReportExceptionStackTraces'
-
-        '-R:MinHeapSize=5m'
-        '-R:MaxHeapSize=128m'
-        '-R:MaxNewSize=2m'
-        '-J-Xms3G'
-        '-J-Xmx3G'
-
-        '--features=clj_easy.graal_build_time.InitClojureClasses'
-        '--enable-preview'
-        '--no-fallback'
-        #'--native-image-info'
-        #'--verbose'
-    )
-
-    echo "Generating native-image"
-    $native_image_tool "${image_args[@]}"
-    ls -lh target/dynr53
-}
-
 if [[ $1 = clean ]]; then
     rm -rf target
 elif [[ $1 = check ]]; then
     exec clojure -M:check
 elif [[ $1 = native-image ]]; then
-    build_native_image
+    shift
+
+    # Look for GRAAL if not set ahead of time.
+    if [[ -z "$GRAAL_HOME" ]]; then
+        GRAAL_ROOT="${GRAAL_ROOT:-$HOME/.local/share/graalvm}"
+        if [[ -d $GRAAL_ROOT ]]; then
+            GRAAL_DIR="$(ls $GRAAL_ROOT | grep '^graalvm' | sort | tail -n 1)"
+            if [[ -n "$GRAAL_DIR" ]]; then
+                GRAAL_HOME="${GRAAL_ROOT}/${GRAAL_DIR}"
+            fi
+        fi
+    fi
+
+    # Switch to GraalVM SDK.
+    if [[ -n "$GRAAL_HOME" ]]; then
+        echo "Using GraalVM from $GRAAL_HOME"
+        export JAVA_HOME="${GRAAL_HOME}/bin"
+        export PATH="${JAVA_HOME}:${PATH}"
+    fi
+
+    exec clojure -T:build native-image "$@"
 else
     exec clojure -T:build "$@"
 fi
