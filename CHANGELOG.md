@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+...
+
+
+## [0.3.42] - 2024-01-14
+
 ### Changed
 - Updated dependency versions.
 - Updated GraalVM build process to run more in Clojure tooling and less in
@@ -39,6 +44,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 Initial release.
 
 
-[Unreleased]: https://github.com/greglook/inadynr53/compare/0.2.32...HEAD
+[Unreleased]: https://github.com/greglook/inadynr53/compare/0.3.42...HEAD
+[0.3.42]: https://github.com/greglook/inadynr53/compare/0.2.32...0.3.42
 [0.2.32]: https://github.com/greglook/inadynr53/compare/0.1.22...0.2.32
 [0.1.22]: https://github.com/greglook/inadynr53/tag/0.1.22
