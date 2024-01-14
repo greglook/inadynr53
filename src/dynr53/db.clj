@@ -98,11 +98,11 @@
   "Return a new empty state database."
   [config]
   (let [state-dir (:state-dir config)
-        targets-file (:targets-file config)
+        targets-source (:targets-file config)
         db (atom {:zone {:id (:zone-id config)}
                   :change nil
-                  :sources (if targets-file
-                             {targets-file {}}
+                  :sources (if targets-source
+                             {targets-source {}}
                              {})
                   :targets (if state-dir
                              (load-target-state state-dir)
