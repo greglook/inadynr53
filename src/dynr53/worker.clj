@@ -143,15 +143,21 @@
         (let [last-read (:read-at state)
               last-modified (Instant/ofEpochMilli (.lastModified file))]
           (when (or (nil? last-read) (.isAfter last-modified last-read))
-            (log/info "Reading targets from file" path
-                      (if last-read
-                        (str "(modified since" last-read ")")
-                        "(first load)"))
-            (let [targets (->> (slurp file)
-                               (str/split-lines)
-                               (remove str/blank?)
-                               (map #(str/split % #"\t"))
-                               (into {}))]
+            (log/debug "Reading targets from file" path
+                       (if last-read
+                         (str "(modified since" last-read ")")
+                         "(first load)"))
+            (when-let [targets (->> (slurp file)
+                                    (str/split-lines)
+                                    (remove str/blank?)
+                                    (map #(str/split % #"\t"))
+                                    (into {})
+                                    (not-empty))]
+              (log/infof "Refreshed %d target%s from %s (%s)"
+                         (count targets)
+                         (if (< 1 (count targets)) "s" "")
+                         path
+                         (str/join ", " (sort (keys targets))))
               (db/touch-source! db path (keys targets))
               (doseq [[hostname address] targets]
                 (db/set-target-address! db hostname address)))))
