@@ -193,7 +193,7 @@
   (log/info "Stopping worker...")
   (try
     (.interrupt worker)
-    (.join worker timeout-ms)
+    (.join worker (long timeout-ms))
     (when (.isAlive worker)
       (log/warn "Worker thread still alive after interrupt!"))
     (catch Exception ex
