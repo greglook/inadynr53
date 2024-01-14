@@ -18,20 +18,6 @@
       SignalHandler)))
 
 
-(def ^:private version-info
-  "Get theversion information."
-  (delay
-    (let [manifest (Properties.)]
-      (try
-        (with-open [rdr (io/reader (io/resource "META-INF/MANIFEST.MF"))]
-          (.load manifest rdr))
-        (catch Exception _
-          _))
-      {:version (.getProperty manifest "Implementation-Version" "dev")
-       :commit (.getProperty manifest "Build-Commit" "HEAD")
-       :date (.getProperty manifest "Build-Date" "live")})))
-
-
 (defn- print-usage
   "Print usage help for the tool."
   []
@@ -51,17 +37,41 @@
   (flush))
 
 
+;; ## Version Information
+
+(def ^:private version-info
+  "Get theversion information."
+  (delay
+    (let [manifest (Properties.)]
+      (try
+        (with-open [rdr (io/reader (io/resource "META-INF/MANIFEST.MF"))]
+          (.load manifest rdr))
+        (catch Exception _
+          _))
+      {:version (.getProperty manifest "Implementation-Version" "dev")
+       :commit (.getProperty manifest "Build-Commit" "HEAD")
+       :date (.getProperty manifest "Build-Date" "live")})))
+
+
+(defn- version-str
+  "Return a string describing the current version of the software."
+  []
+  (let [{:keys [version commit date]} @version-info]
+    (format "dynr53 %s (built from %s on %s)" version commit date)))
+
+
 (defn- print-version
   "Print the version information."
   []
-  (let [{:keys [version commit date]} @version-info]
-    (printf "dynr53 %s (built from %s on %s)\n" version commit date)))
+  (println (version-str)))
 
+
+;; ## Runtime Entry
 
 (defn- configure-runtime!
   "Configure runtime JVM settings."
   []
-  ;; AWS SDK best practice
+  ;; AWS SDK best-practice
   (Security/setProperty "networkaddress.cache.ttl" "60"))
 
 
@@ -111,9 +121,7 @@
     (case command
       (nil "server")
       (try
-        (let [{:keys [version commit date]} @version-info]
-          (log/infof "Starting dynr53 server %s (built from %s on %s)"
-                     version commit date))
+        (log/infof "Starting server" (version-str))
         (run-system)
         (catch Exception ex
           (binding [*out* *err*]
