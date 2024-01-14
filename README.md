@@ -63,6 +63,7 @@ is accessible beyond the local host.
 | `DYNR53_HTTP_ADDRESS` | IP address to bind the HTTP server to.
 | `DYNR53_HTTP_PORT`    | TCP port to bind the HTTP server to.
 | `DYNR53_STATE_DIR`    | Directory for persisting state between runs.
+| `DYNR53_TARGETS_FILE` | Path to a file containing tab-separated hostname and address pairs to set as DNS targets.
 
 The AWS credentials are resolved using the
 [default provider chain](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/credentials-chain.html#credentials-default),
