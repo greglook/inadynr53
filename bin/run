@@ -3,4 +3,14 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+if [[ -f dev.env ]]; then
+    source ./dev.env
+fi
+
+export DYRN53_STATE_DIR="${DYNR53_STATE_DIR:-target/state}"
+export DYNR53_TARGETS_FILE="${DYNR53_STATE_DIR}/targets.tsv"
+export DYNR53_BASIC_AUTH="local:test"
+
+mkdir -p $DYRN53_STATE_DIR
+
 exec clojure -M:run "$@"

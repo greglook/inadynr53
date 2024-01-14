@@ -2,6 +2,7 @@
 .clj-kondo/.cache
 .cpcache
 .nrepl-*
+/dev.env
 
 # Build Artifacts
 /target
