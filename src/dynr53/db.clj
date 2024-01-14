@@ -23,6 +23,11 @@
     :submitted-at #inst "2023-08-29T21:20:51Z"
     :checked-at #inst "2023-08-29T21:22:01Z"}
 
+   :sources
+   {"path/to/file.txt"
+    {:targets #{"foo.example.com"}
+     :read-at #inst "2023-08-29T21:05:38"}}
+
    :targets
    {"foo.example.com"
     {:address "123.45.67.89"
@@ -93,8 +98,12 @@
   "Return a new empty state database."
   [config]
   (let [state-dir (:state-dir config)
+        targets-file (:targets-file config)
         db (atom {:zone {:id (:zone-id config)}
                   :change nil
+                  :sources (if targets-file
+                             {targets-file {}}
+                             {})
                   :targets (if state-dir
                              (load-target-state state-dir)
                              {})})]
@@ -184,6 +193,14 @@
   [db]
   (swap! db assoc :change nil)
   nil)
+
+
+(defn touch-source!
+  [db path targets]
+  (let [source {:targets (set targets)
+                :read-at (now)}]
+    (swap! db assoc-in [:sources path] source)
+    source))
 
 
 (defn set-target-address!

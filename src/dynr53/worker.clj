@@ -1,6 +1,7 @@
 (ns dynr53.worker
   "Background worker which drives Route53 interactions."
   (:require
+    [clojure.java.io :as io]
     [clojure.string :as str]
     [dialog.logger :as log]
     [dynr53.db :as db]
@@ -48,14 +49,42 @@
           (fn check-sync
             [[hostname target]]
             (let [record-name (str hostname ".")
-                  record-set (find-record record-name "A" records)]
-              (when-not (= [(:address target)] (:records record-set))
-                {:action (if record-set :upsert :create)
-                 :name record-name
-                 :type "A"
-                 :ttl 300
-                 :records [(:address target)]}))))
+                  record-set (find-record record-name "A" records)
+                  current-records (:records record-set)]
+              (when-not (= current-records [(:address target)])
+                (->
+                  {:action (if record-set :upsert :create)
+                   :name record-name
+                   :type "A"
+                   :ttl 300
+                   :records [(:address target)]}
+                  (vary-meta assoc ::prev-records current-records))))))
         targets))
+
+
+(defn- format-change
+  "Return a short string explaining a change from compute-changes."
+  [change]
+  (str (name (:action change)) " " (:name change)
+       (when-let [records (::prev-records (meta change))]
+         (str " from "
+              (if (= 1 (count records))
+                (first records)
+                (print-str records))))
+       (when-let [records (:records change)]
+         (str " to "
+              (if (= 1 (count records))
+                (first records)
+                (print-str records))))))
+
+
+(defn- initialize-zone
+  "Fetch initial data about the configured hosted zone."
+  [db route53]
+  (let [zone-id (get-in @db [:zone :id])]
+    (log/info "Fetching initial information for hosted zone" zone-id)
+    (let [zone (r53/get-hosted-zone route53 zone-id)]
+      (db/set-zone-info! db (:name zone) (:comment zone)))))
 
 
 (defn- monitor-change
@@ -81,15 +110,6 @@
         (db/clear-change! db)))))
 
 
-(defn- initialize-zone
-  "Fetch initial data about the configured hosted zone."
-  [db route53]
-  (let [zone-id (get-in @db [:zone :id])]
-    (log/info "Fetching initial information for hosted zone" zone-id)
-    (let [zone (r53/get-hosted-zone route53 zone-id)]
-      (db/set-zone-info! db (:name zone) (:comment zone)))))
-
-
 (defn- monitor-records
   "Monitor the zone records and desired targets."
   [db route53 zone targets]
@@ -99,7 +119,7 @@
             (.isAfter (db/now)
                       (.plus updated-at zone-poll-period)))
       ;; Update the knowledge of records in the zone.
-      (let [_ (log/infof "Updating record set for zone %s (%s)" (:name zone) zone-id)
+      (let [_ (log/debugf "Updating record set for zone %s (%s)" (:name zone) zone-id)
             records (r53/list-resource-record-sets route53 zone-id)]
         (db/set-zone-records! db records))
       ;; Otherwise, check the current record state against desired targets.
@@ -107,13 +127,36 @@
       (let [changes (compute-changes (:records zone) targets)]
         (if (seq changes)
           (let [_ (log/info "Applying changes to record sets:"
-                            (->> changes
-                                 (map #(str (:action %) " " (:name %)))
-                                 (str/join ", ")))
+                            (str/join ", " (map format-change changes)))
                 resp (r53/change-resource-record-sets! route53 zone-id changes)]
             (db/set-change! db (:id resp) (:status resp) changes))
           ;; In sync
           (log/debug "Zone records and targets are in sync"))))))
+
+
+(defn- check-source-files
+  "Try reading targets from the source files if they have been updated."
+  [db]
+  (doseq [[path state] (:sources @db)]
+    (let [file (io/file path)]
+      (if (.exists file)
+        (let [last-read (:read-at state)
+              last-modified (Instant/ofEpochMilli (.lastModified file))]
+          (when (or (nil? last-read) (.isAfter last-modified last-read))
+            (log/info "Reading targets from file" path
+                      (if last-read
+                        (str "(modified since" last-read ")")
+                        "(first load)"))
+            (let [targets (->> (slurp file)
+                               (str/split-lines)
+                               (remove str/blank?)
+                               (map #(str/split % #"\t"))
+                               (into {}))]
+              (db/touch-source! db path (keys targets))
+              (doseq [[hostname address] targets]
+                (db/set-target-address! db hostname address)))))
+        ;; No file exists
+        (log/debug "Skipping source file" path "which does not exist")))))
 
 
 (defn- worker-loop
@@ -124,6 +167,7 @@
       (try
         (Thread/sleep (.toMillis worker-sleep))
         (let [state @db]
+          (check-source-files db)
           (if-let [change (:change state)]
             (monitor-change db route53 change)
             (monitor-records db route53 (:zone state) (:targets state))))

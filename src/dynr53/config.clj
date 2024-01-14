@@ -32,6 +32,10 @@
    {:key :state-dir
     :env "DYNR53_STATE_DIR"
     :desc "Directory for persisting state between runs."
+    :validate (complement str/blank?)}
+   {:key :targets-file
+    :env "DYNR53_TARGETS_FILE"
+    :desc "Path to a file to read to get target hostname/address pairs."
     :validate (complement str/blank?)}])
 
 
